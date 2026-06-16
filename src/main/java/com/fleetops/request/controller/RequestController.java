@@ -85,7 +85,7 @@ public class RequestController {
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestBody Map<String, String> payload, Authentication authentication, HttpServletRequest httpRequest) {
-        if (!payload.containsKey("status")) {
+        if (!payload.containsKey("status") || payload.get("status") == null) {
             return buildError(HttpStatus.BAD_REQUEST, "Missing 'status' field", httpRequest.getRequestURI());
         }
 

@@ -5,7 +5,7 @@ import com.fleetops.request.entity.ServiceRequest.Priority;
 import com.fleetops.request.entity.ServiceRequest.RequestStatus;
 import com.fleetops.request.exception.DownstreamServiceException;
 import com.fleetops.request.repository.ServiceRequestRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,6 +37,7 @@ public class ServiceRequestService {
 
     private final ServiceRequestRepository repository;
     private final RestTemplate restTemplate;
+    private final TransactionTemplate transactionTemplate;
     
     @Value("${app.vehicle-service-url}")
     private String vehicleServiceUrl;
@@ -44,9 +45,10 @@ public class ServiceRequestService {
     @Value("${app.maintenance-service-url}")
     private String maintenanceServiceUrl;
 
-    public ServiceRequestService(ServiceRequestRepository repository, RestTemplate restTemplate) {
+    public ServiceRequestService(ServiceRequestRepository repository, RestTemplate restTemplate, TransactionTemplate transactionTemplate) {
         this.repository = repository;
         this.restTemplate = restTemplate;
+        this.transactionTemplate = transactionTemplate;
     }
 
     public List<ServiceRequest> getAllRequests() {
@@ -65,7 +67,6 @@ public class ServiceRequestService {
         return repository.findById(id);
     }
 
-    @Transactional
     public ServiceRequest createRequest(ServiceRequest request, String requestedBy, String token, boolean driverRequest) {
         if (request.getVehicleId() == null) {
             throw new IllegalStateException("Vehicle ID is required.");
@@ -84,34 +85,41 @@ public class ServiceRequestService {
             throw new IllegalStateException("Requests can only be created for ACTIVE vehicles.");
         }
 
-        if (!repository.findActiveRequestsForUpdate(request.getVehicleId(), ACTIVE_STATUSES).isEmpty()) {
-            throw new IllegalStateException("Vehicle already has an active service request.");
-        }
-
         applyRequestTypeRules(request, vehicle);
         request.setRequestedBy(requestedBy);
         request.setStatus(RequestStatus.OPEN);
+
+        ServiceRequest savedRequest = transactionTemplate.execute(status -> {
+            if (!repository.findActiveRequestsForUpdate(request.getVehicleId(), ACTIVE_STATUSES).isEmpty()) {
+                throw new IllegalStateException("Vehicle already has an active service request.");
+            }
+            return repository.save(request);
+        });
 
         if (request.getRequestType() == ServiceRequest.RequestType.BREAKDOWN) {
             updateVehicleStatus(request.getVehicleId(), "BREAKDOWN", token);
         }
 
-        return repository.save(request);
+        return savedRequest;
     }
 
-    @Transactional
     public Optional<ServiceRequest> updateRequestStatus(Long id, RequestStatus newStatus, String updatedBy, String token) {
         return repository.findById(id).map(request -> {
             Map<String, Object> vehicle = getVehicle(request.getVehicleId(), token);
             ensureVehicleNotRetired(stringValue(vehicle.get("status")));
-            RequestStatus oldStatus = request.getStatus();
-            ensureMutable(oldStatus);
-            ensureValidTransition(oldStatus, newStatus);
+            
+            ServiceRequest updatedRequest = transactionTemplate.execute(status -> {
+                ServiceRequest req = repository.findById(id).orElseThrow();
+                RequestStatus oldStatus = req.getStatus();
+                ensureMutable(oldStatus);
+                ensureValidTransition(oldStatus, newStatus);
 
-            if (newStatus == RequestStatus.APPROVED) {
-                request.setApprovedBy(updatedBy);
-            }
-            request.setStatus(newStatus);
+                if (newStatus == RequestStatus.APPROVED) {
+                    req.setApprovedBy(updatedBy);
+                }
+                req.setStatus(newStatus);
+                return repository.save(req);
+            });
 
             try {
                 if (newStatus == RequestStatus.IN_PROGRESS) {
@@ -124,43 +132,51 @@ public class ServiceRequestService {
                 throw new DownstreamServiceException("Service unavailable. Failed to sync with Vehicle Service.", e);
             }
 
-            return repository.save(request);
+            return updatedRequest;
         });
     }
 
-    @Transactional
     public Optional<ServiceRequest> assignTechnician(Long id, String technician, String token) {
         return repository.findById(id).map(request -> {
             Map<String, Object> vehicle = getVehicle(request.getVehicleId(), token);
             ensureVehicleNotRetired(stringValue(vehicle.get("status")));
-            ensureMutable(request.getStatus());
-            if (request.getStatus() != RequestStatus.APPROVED) {
-                throw new IllegalStateException("Technician assignment is only allowed for APPROVED requests.");
-            }
-            request.setAssignedTechnician(technician);
-            request.setStatus(RequestStatus.ASSIGNED);
+            
+            ServiceRequest updatedRequest = transactionTemplate.execute(status -> {
+                ServiceRequest req = repository.findById(id).orElseThrow();
+                ensureMutable(req.getStatus());
+                if (req.getStatus() != RequestStatus.APPROVED) {
+                    throw new IllegalStateException("Technician assignment is only allowed for APPROVED requests.");
+                }
+                req.setAssignedTechnician(technician);
+                req.setStatus(RequestStatus.ASSIGNED);
+                return repository.save(req);
+            });
 
-            // FIX #2: Auto-dispatch to the assigned technician's maintenance queue
             createMaintenanceTask(request.getVehicleId(), request.getRequestType().name(), request.getDescription(), technician, token);
 
-            return repository.save(request);
+            return updatedRequest;
         });
     }
 
-    @Transactional
     public Optional<ServiceRequest> completeRequest(Long id, String resolutionNotes, Double downtimeHours, String token) {
         return repository.findById(id).map(request -> {
             Map<String, Object> vehicle = getVehicle(request.getVehicleId(), token);
             ensureVehicleNotRetired(stringValue(vehicle.get("status")));
-            ensureMutable(request.getStatus());
-            if (request.getStatus() != RequestStatus.IN_PROGRESS) {
-                throw new IllegalStateException("Only IN_PROGRESS requests can be completed.");
-            }
-            request.setResolutionNotes(resolutionNotes);
-            request.setDowntimeHours(downtimeHours);
+            
+            ServiceRequest updatedRequest = transactionTemplate.execute(status -> {
+                ServiceRequest req = repository.findById(id).orElseThrow();
+                ensureMutable(req.getStatus());
+                if (req.getStatus() != RequestStatus.IN_PROGRESS) {
+                    throw new IllegalStateException("Only IN_PROGRESS requests can be completed.");
+                }
+                req.setResolutionNotes(resolutionNotes);
+                req.setDowntimeHours(downtimeHours);
+                req.setStatus(RequestStatus.COMPLETED);
+                return repository.save(req);
+            });
+
             updateVehicleStatus(request.getVehicleId(), "ACTIVE", token);
-            request.setStatus(RequestStatus.COMPLETED);
-            return repository.save(request);
+            return updatedRequest;
         });
     }
 
@@ -175,7 +191,6 @@ public class ServiceRequestService {
 
         HttpEntity<Map<String, String>> request = new HttpEntity<>(Map.of("status", status), headers);
 
-        // FIX #7: Robust retry logic with exponential backoff
         int maxRetries = 3;
         for (int i = 0; i <= maxRetries; i++) {
             try {
@@ -189,19 +204,11 @@ public class ServiceRequestService {
                 if (i == maxRetries) {
                     throw new DownstreamServiceException("Failed to update vehicle status in Vehicle Service after multiple retries.", e);
                 }
-                try {
-                    // Exponential backoff: 500ms -> 1000ms -> 2000ms
-                    long backoffDelay = 500L * (long) Math.pow(2, i);
-                    Thread.sleep(backoffDelay);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new DownstreamServiceException("Retry backoff interrupted.", ie);
-                }
+                // Removed Thread.sleep() to fix lock contention; retry immediately or rely on async queue in production
             }
         }
     }
 
-    // FIX #2: Helper to dispatch task to the targeted technician's maintenance queue
     private void createMaintenanceTask(Long vehicleId, String taskType, String description, String technician, String token) {
         if (maintenanceServiceUrl == null || maintenanceServiceUrl.isEmpty()) {
             log.warn("Maintenance service URL is not configured. Skipping task dispatch.");
@@ -233,11 +240,14 @@ public class ServiceRequestService {
             }
         } catch (Exception e) {
             log.error("Failed to add task to maintenance queue for technician: {}. Error: {}", technician, e.getMessage());
-            // Catch error to allow technician assignment to succeed even if maintenance queue is temporarily down
         }
     }
 
     private void applyRequestTypeRules(ServiceRequest request, Map<String, Object> vehicle) {
+        if (request.getRequestType() == null) {
+            throw new IllegalArgumentException("Request type is required.");
+        }
+        
         LocalDate insuranceExpiry = localDateValue(vehicle.get("insuranceExpiry"));
         LocalDate nextServiceDate = localDateValue(vehicle.get("nextServiceDate"));
         Integer nextServiceMileage = intValue(vehicle.get("nextServiceMileage"));
@@ -265,7 +275,6 @@ public class ServiceRequestService {
                 }
             }
             default -> {
-                // Other request types do not have additional hard business constraints here.
             }
         }
     }
@@ -339,4 +348,3 @@ public class ServiceRequestService {
         }
     }
 }
-
