@@ -41,6 +41,9 @@ public class ServiceRequestService {
     @Value("${app.vehicle-service-url}")
     private String vehicleServiceUrl;
 
+    @Value("${app.maintenance-service-url}")
+    private String maintenanceServiceUrl;
+
     public ServiceRequestService(ServiceRequestRepository repository, RestTemplate restTemplate) {
         this.repository = repository;
         this.restTemplate = restTemplate;
@@ -136,6 +139,10 @@ public class ServiceRequestService {
             }
             request.setAssignedTechnician(technician);
             request.setStatus(RequestStatus.ASSIGNED);
+
+            // FIX #2: Auto-dispatch to the assigned technician's maintenance queue
+            createMaintenanceTask(request.getVehicleId(), request.getRequestType().name(), request.getDescription(), technician, token);
+
             return repository.save(request);
         });
     }
@@ -168,8 +175,8 @@ public class ServiceRequestService {
 
         HttpEntity<Map<String, String>> request = new HttpEntity<>(Map.of("status", status), headers);
 
-        // Simple retry logic (1 retry)
-        int maxRetries = 1;
+        // FIX #7: Robust retry logic with exponential backoff
+        int maxRetries = 3;
         for (int i = 0; i <= maxRetries; i++) {
             try {
                 ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.PATCH, request, String.class);
@@ -180,9 +187,53 @@ public class ServiceRequestService {
             } catch (RestClientException e) {
                 log.warn("Attempt {} failed to update vehicle status: {}", i + 1, e.getMessage());
                 if (i == maxRetries) {
-                    throw new DownstreamServiceException("Failed to update vehicle status in Vehicle Service.", e);
+                    throw new DownstreamServiceException("Failed to update vehicle status in Vehicle Service after multiple retries.", e);
+                }
+                try {
+                    // Exponential backoff: 500ms -> 1000ms -> 2000ms
+                    long backoffDelay = 500L * (long) Math.pow(2, i);
+                    Thread.sleep(backoffDelay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new DownstreamServiceException("Retry backoff interrupted.", ie);
                 }
             }
+        }
+    }
+
+    // FIX #2: Helper to dispatch task to the targeted technician's maintenance queue
+    private void createMaintenanceTask(Long vehicleId, String taskType, String description, String technician, String token) {
+        if (maintenanceServiceUrl == null || maintenanceServiceUrl.isEmpty()) {
+            log.warn("Maintenance service URL is not configured. Skipping task dispatch.");
+            return;
+        }
+
+        String url = maintenanceServiceUrl + "/api/tasks/add?username=" + technician;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        if (token != null) {
+            headers.set("Authorization", token);
+        }
+
+        Map<String, Object> payload = Map.of(
+            "vehicleId", vehicleId,
+            "taskType", taskType,
+            "description", description != null ? description : ""
+        );
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
+
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, request, String.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("Successfully dispatched task for vehicle {} to technician {}'s queue", vehicleId, technician);
+            } else {
+                log.warn("Maintenance service returned non-2xx status code on task dispatch: {}", response.getStatusCode());
+            }
+        } catch (Exception e) {
+            log.error("Failed to add task to maintenance queue for technician: {}. Error: {}", technician, e.getMessage());
+            // Catch error to allow technician assignment to succeed even if maintenance queue is temporarily down
         }
     }
 
