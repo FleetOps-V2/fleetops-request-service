@@ -1,0 +1,28 @@
+name: Request Service CI
+
+on:
+  push:
+    branches: [main, develop, "feature/**"]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: request-service-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  security-events: write
+  id-token: write
+
+jobs:
+  ci:
+    uses: FleetOps-V2/fleetops-github-workflows/.github/workflows/java-ci-ecr.yml@main
+    with:
+      service-name: request-service
+      java-version: "21"
+      sonar-project-key: FleetOps-V2_fleetops-request-service
+      sonar-organization: fleetops-v2
+      run-sonar: ${{ github.ref_name == 'develop' || github.ref_name == 'main' }}
+      run-snyk:  ${{ github.ref_name == 'develop' || github.ref_name == 'main' }}
+    secrets: inherit

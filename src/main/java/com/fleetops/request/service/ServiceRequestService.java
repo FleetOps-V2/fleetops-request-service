@@ -287,9 +287,10 @@ public class ServiceRequestService {
         }
 
         HttpEntity<Void> request = new HttpEntity<>(headers);
-        ResponseEntity<Map> response;
+        ResponseEntity<Map<String, Object>> response;
         try {
-            response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
+            response = restTemplate.exchange(url, HttpMethod.GET, request,
+                    new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {});
         } catch (RestClientException e) {
             throw new DownstreamServiceException("Failed to fetch vehicle details from Vehicle Service.", e);
         }
