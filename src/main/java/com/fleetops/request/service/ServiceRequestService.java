@@ -109,7 +109,7 @@ public class ServiceRequestService {
             ensureVehicleNotRetired(stringValue(vehicle.get("status")));
             
             ServiceRequest updatedRequest = transactionTemplate.execute(status -> {
-                ServiceRequest req = repository.findById(id).orElseThrow();
+                ServiceRequest req = repository.findByIdForUpdate(id).orElseThrow();
                 RequestStatus oldStatus = req.getStatus();
                 ensureMutable(oldStatus);
                 ensureValidTransition(oldStatus, newStatus);
@@ -142,7 +142,7 @@ public class ServiceRequestService {
             ensureVehicleNotRetired(stringValue(vehicle.get("status")));
             
             ServiceRequest updatedRequest = transactionTemplate.execute(status -> {
-                ServiceRequest req = repository.findById(id).orElseThrow();
+                ServiceRequest req = repository.findByIdForUpdate(id).orElseThrow();
                 ensureMutable(req.getStatus());
                 if (req.getStatus() != RequestStatus.APPROVED) {
                     throw new IllegalStateException("Technician assignment is only allowed for APPROVED requests.");
@@ -164,7 +164,7 @@ public class ServiceRequestService {
             ensureVehicleNotRetired(stringValue(vehicle.get("status")));
             
             ServiceRequest updatedRequest = transactionTemplate.execute(status -> {
-                ServiceRequest req = repository.findById(id).orElseThrow();
+                ServiceRequest req = repository.findByIdForUpdate(id).orElseThrow();
                 ensureMutable(req.getStatus());
                 if (req.getStatus() != RequestStatus.IN_PROGRESS) {
                     throw new IllegalStateException("Only IN_PROGRESS requests can be completed.");

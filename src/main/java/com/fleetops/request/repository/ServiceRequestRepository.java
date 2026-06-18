@@ -32,6 +32,7 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
                                                      @Param("statuses") List<RequestStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    Optional<ServiceRequest> findById(Long id);
+    @Query("SELECT sr FROM ServiceRequest sr WHERE sr.id = :id")
+    Optional<ServiceRequest> findByIdForUpdate(@Param("id") Long id);
 }
 
