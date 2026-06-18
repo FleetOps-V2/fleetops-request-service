@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.5.12</version>
+		<version>3.5.14</version>
 		<relativePath/>
 	</parent>
 	<groupId>com.fleetops</groupId>
@@ -17,8 +17,8 @@
 	<properties>
 		<java.version>21</java.version>
 		<!-- CVE fixes: override Spring Boot BOM-managed versions -->
-		<tomcat.version>10.1.54</tomcat.version>
-		<postgresql.version>42.7.7</postgresql.version>
+		<tomcat.version>10.1.55</tomcat.version>
+		<postgresql.version>42.7.11</postgresql.version>
 		<jackson-bom.version>2.21.2</jackson-bom.version>
 	</properties>
 
