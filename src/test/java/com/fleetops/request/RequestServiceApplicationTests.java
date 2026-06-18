@@ -9,7 +9,7 @@ import com.fleetops.request.service.ServiceRequestService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -41,7 +41,7 @@ class RequestServiceApplicationTests {
 	@Autowired
 	private ServiceRequestRepository repository;
 
-	@MockBean
+	@MockitoBean
 	private RestTemplate restTemplate;
 
 	private static final String TOKEN = "Bearer test-token";

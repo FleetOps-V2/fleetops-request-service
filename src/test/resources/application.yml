@@ -1,0 +1,3 @@
+jwt:
+  secret: test-secret-for-ci-do-not-use-in-production-must-be-at-least-32-chars
+  expiration: 86400000

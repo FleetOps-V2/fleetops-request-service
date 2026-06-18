@@ -1,0 +1,34 @@
+name: Request Service CD
+
+on:
+  workflow_run:
+    workflows: ["Request Service CI"]
+    types: [completed]
+    branches: [develop, main]
+
+concurrency:
+  group: request-service-cd-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  cd-dev:
+    name: CD — Dev
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'develop' }}
+    uses: FleetOps-V2/fleetops-github-workflows/.github/workflows/cd-ecr.yml@main
+    with:
+      service-name: request-service
+      ci-workflow-name: Request Service CI
+      deploy-env: dev
+      head-sha: ${{ github.event.workflow_run.head_sha }}
+    secrets: inherit
+
+  cd-prod:
+    name: CD — Prod
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' }}
+    uses: FleetOps-V2/fleetops-github-workflows/.github/workflows/cd-ecr.yml@main
+    with:
+      service-name: request-service
+      ci-workflow-name: Request Service CI
+      deploy-env: prod
+      head-sha: ${{ github.event.workflow_run.head_sha }}
+    secrets: inherit
