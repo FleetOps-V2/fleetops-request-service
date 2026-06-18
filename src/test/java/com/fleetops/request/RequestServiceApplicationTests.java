@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -23,6 +24,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+
+import org.mockito.ArgumentMatchers;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -142,7 +145,6 @@ class RequestServiceApplicationTests {
 		}
 	}
 
-	@SuppressWarnings({"rawtypes", "unchecked"})
 	private void mockVehicle(Long id,
 							 String status,
 							 String assignedDriverId,
@@ -160,8 +162,9 @@ class RequestServiceApplicationTests {
 				"insuranceExpiry", insuranceExpiry.toString()
 		);
 
-		when(restTemplate.exchange(contains("/api/vehicles/" + id), eq(HttpMethod.GET), any(HttpEntity.class), eq(Map.class)))
-				.thenReturn(new ResponseEntity(vehicle, HttpStatus.OK));
+		when(restTemplate.exchange(contains("/api/vehicles/" + id), eq(HttpMethod.GET), any(HttpEntity.class),
+				ArgumentMatchers.<ParameterizedTypeReference<Map<String, Object>>>any()))
+				.thenReturn(new ResponseEntity<>(vehicle, HttpStatus.OK));
 
 		when(restTemplate.exchange(contains("/api/vehicles/" + id + "/status"), eq(HttpMethod.PATCH), any(HttpEntity.class), eq(String.class)))
 				.thenReturn(new ResponseEntity<>("ok", HttpStatus.OK));
