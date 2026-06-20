@@ -11,6 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -66,7 +67,7 @@ public class RequestController {
     @PreAuthorize("hasAnyRole('DRIVER', 'ADMIN')")
     public ResponseEntity<?> createRequest(@RequestBody ServiceRequest request, Authentication authentication, HttpServletRequest httpRequest) {
         try {
-            String token = httpRequest.getHeader("Authorization");
+            String token = extractToken(httpRequest);
             boolean isDriver = authentication.getAuthorities().stream()
                     .anyMatch(a -> a.getAuthority().equals("ROLE_DRIVER"));
             ServiceRequest created = requestService.createRequest(request, authentication.getName(), token, isDriver);
@@ -91,7 +92,7 @@ public class RequestController {
 
         try {
             RequestStatus newStatus = RequestStatus.valueOf(payload.get("status").toUpperCase());
-            String token = httpRequest.getHeader("Authorization");
+            String token = extractToken(httpRequest);
             
             return requestService.updateRequestStatus(id, newStatus, authentication.getName(), token)
                     .<ResponseEntity<?>>map(ResponseEntity::ok)
@@ -114,7 +115,7 @@ public class RequestController {
             return buildError(HttpStatus.BAD_REQUEST, "Missing 'technician' field", httpRequest.getRequestURI());
         }
         try {
-            String token = httpRequest.getHeader("Authorization");
+            String token = extractToken(httpRequest);
             return requestService.assignTechnician(id, payload.get("technician"), token)
                     .<ResponseEntity<?>>map(ResponseEntity::ok)
                     .orElse(buildError(HttpStatus.NOT_FOUND, "Request not found", httpRequest.getRequestURI()));
@@ -128,7 +129,7 @@ public class RequestController {
     @PatchMapping("/{id}/complete")
     @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<?> completeRequest(@PathVariable Long id, @RequestBody Map<String, Object> payload, HttpServletRequest httpRequest) {
-        String token = httpRequest.getHeader("Authorization");
+        String token = extractToken(httpRequest);
         String resolutionNotes = (String) payload.get("resolutionNotes");
         Double downtimeHours = payload.containsKey("downtimeHours") ? Double.valueOf(payload.get("downtimeHours").toString()) : null;
         
@@ -143,6 +144,18 @@ public class RequestController {
         } catch (DownstreamServiceException e) {
              return buildError(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), httpRequest.getRequestURI());
         }
+    }
+
+    private String extractToken(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null) return authHeader;
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if ("jwt".equals(cookie.getName())) return "Bearer " + cookie.getValue();
+            }
+        }
+        return null;
     }
 
     private ResponseEntity<Map<String, Object>> buildError(HttpStatus status, String message, String path) {
