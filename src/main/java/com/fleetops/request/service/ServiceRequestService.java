@@ -1,5 +1,6 @@
 package com.fleetops.request.service;
 
+import com.fleetops.request.config.StepFunctionsConfig;
 import com.fleetops.request.entity.ServiceRequest;
 import com.fleetops.request.entity.ServiceRequest.Priority;
 import com.fleetops.request.entity.ServiceRequest.RequestStatus;
@@ -17,11 +18,15 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import software.amazon.awssdk.services.sfn.SfnClient;
+import software.amazon.awssdk.services.sfn.model.StartExecutionRequest;
+import software.amazon.awssdk.services.sfn.model.StartExecutionResponse;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class ServiceRequestService {
@@ -38,17 +43,21 @@ public class ServiceRequestService {
     private final ServiceRequestRepository repository;
     private final RestTemplate restTemplate;
     private final TransactionTemplate transactionTemplate;
-    
-    @Value("${app.vehicle-service-url}")
+    private final SfnClient sfnClient;
+    private final StepFunctionsConfig sfnConfig;
+
+    @Value("${app.vehicle-service-url:http://fleetops-vehicle-service:8080}")
     private String vehicleServiceUrl;
 
-    @Value("${app.maintenance-service-url}")
+    @Value("${app.maintenance-service-url:http://fleetops-maintenance-service:8080}")
     private String maintenanceServiceUrl;
 
-    public ServiceRequestService(ServiceRequestRepository repository, RestTemplate restTemplate, TransactionTemplate transactionTemplate) {
+    public ServiceRequestService(ServiceRequestRepository repository, RestTemplate restTemplate, TransactionTemplate transactionTemplate, SfnClient sfnClient, StepFunctionsConfig sfnConfig) {
         this.repository = repository;
         this.restTemplate = restTemplate;
         this.transactionTemplate = transactionTemplate;
+        this.sfnClient = sfnClient;
+        this.sfnConfig = sfnConfig;
     }
 
     public List<ServiceRequest> getAllRequests() {
@@ -99,6 +108,8 @@ public class ServiceRequestService {
         if (request.getRequestType() == ServiceRequest.RequestType.BREAKDOWN) {
             updateVehicleStatus(request.getVehicleId(), "BREAKDOWN", token);
         }
+
+        startStepFunctionsExecution(savedRequest);
 
         return savedRequest;
     }
@@ -180,8 +191,39 @@ public class ServiceRequestService {
         });
     }
 
+    private void startStepFunctionsExecution(ServiceRequest request) {
+        String arn = sfnConfig.getStateMachineArn();
+        if (arn == null || arn.isBlank()) {
+            log.warn("Step Functions state machine ARN not configured — skipping execution start");
+            return;
+        }
+        try {
+            String executionName = "req-" + request.getId() + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+            String input = "{\"requestId\":" + request.getId()
+                    + ",\"vehicleId\":" + request.getVehicleId()
+                    + ",\"requestType\":\"" + request.getRequestType() + "\""
+                    + ",\"requestedBy\":\"" + request.getRequestedBy() + "\"}";
+
+            StartExecutionResponse response = sfnClient.startExecution(
+                    StartExecutionRequest.builder()
+                            .stateMachineArn(arn)
+                            .name(executionName)
+                            .input(input)
+                            .build());
+
+            request.setStepFunctionsExecutionArn(response.executionArn());
+            repository.save(request);
+            log.info("Started Step Functions execution {} for request {}", response.executionArn(), request.getId());
+        } catch (Exception e) {
+            log.error("Failed to start Step Functions execution for request {}: {}", request.getId(), e.getMessage());
+        }
+    }
+
     private void updateVehicleStatus(Long vehicleId, String status, String token) {
-        String url = vehicleServiceUrl + "/api/vehicles/" + vehicleId + "/status";
+        String url = org.springframework.web.util.UriComponentsBuilder.fromUriString(vehicleServiceUrl)
+                .path("/api/vehicles/{vehicleId}/status")
+                .buildAndExpand(vehicleId)
+                .toUriString();
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -215,7 +257,11 @@ public class ServiceRequestService {
             return;
         }
 
-        String url = maintenanceServiceUrl + "/api/tasks/add?username=" + technician;
+        String url = org.springframework.web.util.UriComponentsBuilder
+                .fromUriString(maintenanceServiceUrl)
+                .path("/api/tasks/add")
+                .queryParam("username", technician)
+                .toUriString();
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -280,7 +326,10 @@ public class ServiceRequestService {
     }
 
     private Map<String, Object> getVehicle(Long vehicleId, String token) {
-        String url = vehicleServiceUrl + "/api/vehicles/" + vehicleId;
+        String url = org.springframework.web.util.UriComponentsBuilder.fromUriString(vehicleServiceUrl)
+                .path("/api/vehicles/{vehicleId}")
+                .buildAndExpand(vehicleId)
+                .toUriString();
         HttpHeaders headers = new HttpHeaders();
         if (token != null) {
             headers.set("Authorization", token);

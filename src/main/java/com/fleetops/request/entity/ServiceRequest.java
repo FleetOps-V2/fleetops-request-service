@@ -68,6 +68,9 @@ public class ServiceRequest {
     @Column(name = "assigned_technician", length = 100)
     private String assignedTechnician;
 
+    @Column(name = "step_functions_execution_arn", length = 500)
+    private String stepFunctionsExecutionArn;
+
     @Column(name = "resolution_notes", columnDefinition = "TEXT")
     private String resolutionNotes;
 
@@ -125,6 +128,9 @@ public class ServiceRequest {
 
     public String getAssignedTechnician() { return assignedTechnician; }
     public void setAssignedTechnician(String assignedTechnician) { this.assignedTechnician = assignedTechnician; }
+
+    public String getStepFunctionsExecutionArn() { return stepFunctionsExecutionArn; }
+    public void setStepFunctionsExecutionArn(String stepFunctionsExecutionArn) { this.stepFunctionsExecutionArn = stepFunctionsExecutionArn; }
 
     public String getResolutionNotes() { return resolutionNotes; }
     public void setResolutionNotes(String resolutionNotes) { this.resolutionNotes = resolutionNotes; }
