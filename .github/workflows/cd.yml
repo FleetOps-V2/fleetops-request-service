@@ -20,6 +20,7 @@ jobs:
       ci-workflow-name: Request Service CI
       deploy-env: dev
       head-sha: ${{ github.event.workflow_run.head_sha }}
+      health-url: "https://fleetops.website/api/requests"
     secrets: inherit
 
   cd-prod:
@@ -31,4 +32,5 @@ jobs:
       ci-workflow-name: Request Service CI
       deploy-env: prod
       head-sha: ${{ github.event.workflow_run.head_sha }}
+      health-url: "https://fleetops.website/api/requests"
     secrets: inherit
