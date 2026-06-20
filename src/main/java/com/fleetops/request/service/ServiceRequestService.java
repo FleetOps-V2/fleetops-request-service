@@ -107,6 +107,9 @@ public class ServiceRequestService {
 
         if (request.getRequestType() == ServiceRequest.RequestType.BREAKDOWN) {
             updateVehicleStatus(request.getVehicleId(), "BREAKDOWN", token);
+        } else {
+            // Reserve the vehicle so AI advisor doesn't re-recommend it while request is pending
+            updateVehicleStatus(request.getVehicleId(), "IN_SERVICE", token);
         }
 
         startStepFunctionsExecution(savedRequest);
@@ -135,7 +138,7 @@ public class ServiceRequestService {
             try {
                 if (newStatus == RequestStatus.IN_PROGRESS) {
                     updateVehicleStatus(request.getVehicleId(), "IN_SERVICE", token);
-                } else if (newStatus == RequestStatus.COMPLETED) {
+                } else if (newStatus == RequestStatus.COMPLETED || newStatus == RequestStatus.REJECTED) {
                     updateVehicleStatus(request.getVehicleId(), "ACTIVE", token);
                 }
             } catch (Exception e) {
