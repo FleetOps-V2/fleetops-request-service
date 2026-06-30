@@ -19,7 +19,7 @@
 		<!-- CVE fixes: override Spring Boot BOM-managed versions -->
 		<tomcat.version>10.1.55</tomcat.version>
 		<postgresql.version>42.7.11</postgresql.version>
-		<jackson-bom.version>2.21.2</jackson-bom.version>
+		<jackson-bom.version>2.21.4</jackson-bom.version>
 		<spring-security.version>6.5.9</spring-security.version>
 		<netty.version>4.1.135.Final</netty.version>
 		<!-- SonarQube: skip coverage enforcement (no JaCoCo configured) -->
